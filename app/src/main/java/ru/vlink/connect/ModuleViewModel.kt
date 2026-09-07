@@ -1,6 +1,7 @@
 package ru.vlink.connect
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -34,16 +35,12 @@ data class UiState(
  * самое, что записать туда пароль: доступ к управлению телефонами получил
  * бы любой, кто взял разблокированный телефон в руки.
  */
-class ModuleViewModel : ViewModel() {
+class ModuleViewModel(app: Application) : AndroidViewModel(app) {
 
-    // Следующий шаг — BleModuleClient поверх настоящего BluetoothGatt.
-    // Экраны его не заметят: они разговаривают только с ModuleClient.
-    private val client: ModuleClient = FakeModuleClient()
+    private val client: ModuleClient = BleModuleClient(app)
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui
-
-    val isFake get() = client.isFake
 
     // Секреты сеанса
     private var salt: ByteArray? = null
@@ -57,6 +54,9 @@ class ModuleViewModel : ViewModel() {
         viewModelScope.launch { client.link.collect(::onLink) }
         viewModelScope.launch { client.found.collect { f -> _ui.update { it.copy(found = f) } } }
         viewModelScope.launch { client.events.collect(::onEvent) }
+        viewModelScope.launch {
+            client.notice.collect { text -> _ui.update { it.copy(busy = null, message = text) } }
+        }
 
         // Часы окна тикают у нас: модуль присылает остаток только вместе со
         // статусом, а человек должен видеть, как время уходит.
@@ -77,7 +77,6 @@ class ModuleViewModel : ViewModel() {
 
     fun startScan() = client.startScan()
     fun stopScan() = client.stopScan()
-    fun powerCycle() = client.powerCycle()
 
     fun connect(m: FoundModule) {
         _ui.update { it.copy(moduleName = m.name, busy = "Подключаюсь...") }

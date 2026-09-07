@@ -7,6 +7,9 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -50,7 +53,23 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        if (!vm.isFake) ask.launch(permissions)
+        // С targetSdk 35 Android растягивает окно под системные полосы, и
+        // без разбора вставок заголовок уезжает под часы, а клавиатура
+        // закрывает поля. Отступы вешаем на корень: заголовок отъезжает
+        // вниз, а нижний край поднимается над клавиатурой.
+        ViewCompat.setOnApplyWindowInsetsListener(b.root) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            v.updatePadding(
+                left = bars.left,
+                top = bars.top,
+                right = bars.right,
+                bottom = maxOf(bars.bottom, ime.bottom)
+            )
+            insets
+        }
+
+        ask.launch(permissions)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {

@@ -1,8 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="?attr/colorSurface"
     android:orientation="vertical">
+
+    <!-- Отступ под строку состояния задаётся из кода: с targetSdk 35
+         Android сам растягивает окно под системные полосы, и без разбора
+         вставок заголовок уезжает под часы. -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorSurface"
+        app:title="@string/app_name"
+        app:titleCentered="false" />
 
     <!-- Полоса состояния видна на всех экранах: минутное окно — главное
          ограничение всей работы с модулем, и человек должен видеть остаток
@@ -11,7 +25,10 @@
         android:id="@+id/banner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="12dp"
+        android:background="?attr/colorSecondaryContainer"
+        android:textColor="?attr/colorOnSecondaryContainer"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
         android:textSize="14sp"
         android:visibility="gone" />
 

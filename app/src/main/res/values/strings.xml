@@ -7,7 +7,6 @@
     <string name="scan_start">Искать</string>
     <string name="scan_stop">Остановить</string>
     <string name="scan_empty">Модулей пока не найдено</string>
-    <string name="scan_fake_reset">Имитатор: снять и подать питание</string>
 
     <string name="auth_title_setup">Первая настройка</string>
     <string name="auth_title_login">Вход</string>

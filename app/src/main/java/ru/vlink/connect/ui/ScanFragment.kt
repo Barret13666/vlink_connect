@@ -21,13 +21,6 @@ class ScanFragment : Fragment(R.layout.fragment_scan) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val b = FragmentScanBinding.bind(view)
 
-        b.fakeReset.isVisible = vm.isFake
-        b.fakeReset.setOnClickListener {
-            vm.powerCycle()
-            b.fakeReset.isEnabled = false
-            b.fakeReset.postDelayed({ b.fakeReset.isEnabled = true }, 500)
-        }
-
         b.scanButton.setOnClickListener {
             if (vm.ui.value.link == Link.SCANNING) vm.stopScan() else vm.startScan()
         }

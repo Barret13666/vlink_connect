@@ -26,15 +26,6 @@
         android:layout_marginTop="16dp"
         android:text="@string/scan_start" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/fakeReset"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/scan_fake_reset"
-        android:visibility="gone" />
-
     <TextView
         android:id="@+id/empty"
         android:layout_width="match_parent"
