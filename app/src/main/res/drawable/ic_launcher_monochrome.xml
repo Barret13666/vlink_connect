@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Слой для тем Android 13: система красит его своим цветом, а рисунок
+     задаётся прозрачностью. Сплошной щит с тёмной буквой здесь превратился
+     бы в однотонное пятно, поэтому щит нарисован обводкой. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M54,30.3 L75.6,39.3 L75.6,54.3 c0,12.6 -10.2,19.2 -21.6,23.4 c-11.4,-4.2 -21.6,-10.8 -21.6,-23.4 L32.4,39.3 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M45,47.1 L54,62.7 L63,47.1"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

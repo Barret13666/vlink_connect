@@ -10,6 +10,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.vlink.connect.*
 import ru.vlink.connect.databinding.FragmentScanBinding
@@ -26,7 +27,17 @@ class ScanFragment : Fragment(R.layout.fragment_scan) {
         val b = FragmentScanBinding.bind(view)
         rendered = null
 
-        b.swipe.setOnRefreshListener { vm.startScan() }
+        b.swipe.setOnRefreshListener {
+            vm.startScan()
+            // Кружок держим ровно до появления первых результатов. Дальше он
+            // не сообщает ничего нового, зато накрывает собой список и
+            // перехватывает нажатия. Что поиск продолжается, видно по
+            // надписи на кнопке.
+            viewLifecycleOwner.lifecycleScope.launch {
+                delay(1000)
+                b.swipe.isRefreshing = false
+            }
+        }
 
         b.scanButton.setOnClickListener {
             if (vm.ui.value.link == Link.SCANNING) vm.stopScan() else vm.startScan()
@@ -37,7 +48,6 @@ class ScanFragment : Fragment(R.layout.fragment_scan) {
                 vm.ui.collect { s ->
                     val scanning = s.link == Link.SCANNING
                     b.scanButton.setText(if (scanning) R.string.scan_stop else R.string.scan_start)
-                    b.swipe.isRefreshing = scanning
                     b.empty.isVisible = s.found.isEmpty()
 
                     if (s.found == rendered) return@collect
