@@ -107,14 +107,47 @@ class BleModuleClient(private val app: Application) : ModuleClient {
         }
 
         override fun onScanFailed(errorCode: Int) {
+            // Код 1 — «поиск уже идёт». Это не отказ: поиск работает, и
+            // сбрасывать состояние в «не ищем» нельзя. Иначе кнопка снова
+            // предложит искать, следующий запуск вернёт ту же единицу, и
+            // выбраться можно будет только перезапуском приложения.
+            if (errorCode == 1) {
+                _link.value = Link.SCANNING
+                return
+            }
+
             _link.value = Link.IDLE
-            say("Поиск не запустился, код $errorCode")
+            say(when (errorCode) {
+                2 -> "Android не дал приложению искать устройства. Помогает " +
+                     "выключить и включить Bluetooth."
+                3 -> "Внутренняя ошибка Bluetooth. Помогает выключить и " +
+                     "включить его."
+                4 -> "Этот телефон не умеет искать устройства BLE."
+                5 -> "Bluetooth занят другими приложениями, закройте лишние."
+                6 -> "Поиск запускался слишком часто — Android его придержал. " +
+                     "Подождите около полуминуты."
+                else -> "Поиск не запустился, код $errorCode"
+            })
         }
     }
 
     override fun startScan() {
         val a = adapter
         if (a == null || !a.isEnabled) { say("Включите Bluetooth"); return }
+
+        // Уже ищем — просто продлеваем. Повторный запуск вернул бы код 1, а
+        // главное, Android считает запуски: пять за полминуты, и он глушит
+        // поиск молча, без ошибки и без результатов. Потянуть список вниз
+        // пять раз подряд — дело двух секунд.
+        if (_link.value == Link.SCANNING) {
+            main.removeCallbacks(stopScanTask)
+            main.postDelayed(stopScanTask, SCAN_MS)
+            return
+        }
+
+        // Снимаем возможную забытую подписку: если прошлый поиск закончился
+        // не через нас, она осталась висеть, и запуск дал бы код 1.
+        a.bluetoothLeScanner?.stopScan(scanCallback)
 
         _found.value = emptyList()
         _link.value = Link.SCANNING
