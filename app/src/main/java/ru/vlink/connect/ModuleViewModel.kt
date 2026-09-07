@@ -86,7 +86,9 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
     fun disconnect() {
         client.disconnect()
         forgetSession()
-        _ui.update { UiState() }
+        _ui.update {
+            UiState(message = "Отключились. Модуль снова в эфире — можно открывать VESC Tool.")
+        }
     }
 
     fun setup(login: String, password: String, repeat: String) {

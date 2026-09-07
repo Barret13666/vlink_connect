@@ -4,6 +4,7 @@
 
     <string name="scan_title">Поиск модуля</string>
     <string name="scan_hint">Включите питание самоката и подключитесь в первую минуту: служебный доступ модуль открывает только на это время.</string>
+    <string name="scan_hint_single">Модуль держит одно подключение. Если открыт VESC Tool и он подключён — сначала отключитесь в нём, иначе модуль не появится в списке.</string>
     <string name="scan_start">Искать</string>
     <string name="scan_stop">Остановить</string>
     <string name="scan_empty">Модулей пока не найдено</string>
@@ -22,6 +23,8 @@
     <string name="home_bind">Привязать этот телефон</string>
     <string name="home_phones">Телефоны</string>
     <string name="home_password">Сменить пароль</string>
+    <string name="home_disconnect">Отключиться</string>
+    <string name="home_single_note">Пока приложение подключено, VESC Tool модуль не увидит: соединение у модуля одно, и во время него он не объявляет себя в эфире. Закончив, нажмите «Отключиться».</string>
     <string name="home_bind_warning">Android покажет своё окно сопряжения. Кода в нём не будет — только согласие. Нажмите «Сопрячь», иначе привязка не состоится.</string>
 
     <string name="phones_title">Привязанные телефоны</string>

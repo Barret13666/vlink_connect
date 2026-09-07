@@ -20,6 +20,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         val b = FragmentHomeBinding.bind(view)
 
         b.phones.setOnClickListener { vm.goTo(Screen.PHONES) }
+        b.disconnect.setOnClickListener { vm.disconnect() }
         b.password.setOnClickListener { vm.goTo(Screen.PASSWORD) }
 
         b.bind.setOnClickListener {
