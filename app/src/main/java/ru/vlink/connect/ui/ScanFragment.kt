@@ -1,7 +1,10 @@
 package ru.vlink.connect.ui
 
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
+import android.widget.TextView
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
@@ -9,17 +12,21 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import ru.vlink.connect.*
-import android.view.LayoutInflater
-import android.widget.TextView
-import androidx.core.view.isVisible
 import ru.vlink.connect.databinding.FragmentScanBinding
 
 class ScanFragment : Fragment(R.layout.fragment_scan) {
 
     private val vm: ModuleViewModel by activityViewModels()
 
+    /* Список перерисовываем только при изменении: состояние приходит часто,
+       а пересборка на каждое обновление теряет прокрутку. */
+    private var rendered: List<FoundModule>? = null
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val b = FragmentScanBinding.bind(view)
+        rendered = null
+
+        b.swipe.setOnRefreshListener { vm.startScan() }
 
         b.scanButton.setOnClickListener {
             if (vm.ui.value.link == Link.SCANNING) vm.stopScan() else vm.startScan()
@@ -28,22 +35,23 @@ class ScanFragment : Fragment(R.layout.fragment_scan) {
         viewLifecycleOwner.lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.ui.collect { s ->
-                    b.scanButton.setText(
-                        if (s.link == Link.SCANNING) R.string.scan_stop else R.string.scan_start
-                    )
+                    val scanning = s.link == Link.SCANNING
+                    b.scanButton.setText(if (scanning) R.string.scan_stop else R.string.scan_start)
+                    b.swipe.isRefreshing = scanning
                     b.empty.isVisible = s.found.isEmpty()
 
-                    if (b.list.childCount != s.found.size) {
-                        b.list.removeAllViews()
-                        s.found.forEach { m ->
-                            val row = LayoutInflater.from(requireContext())
-                                .inflate(android.R.layout.simple_list_item_2, b.list, false)
-                            row.findViewById<TextView>(android.R.id.text1).text = m.name
-                            row.findViewById<TextView>(android.R.id.text2).text =
-                                "${m.id} · ${m.rssi} dBm"
-                            row.setOnClickListener { vm.connect(m) }
-                            b.list.addView(row)
-                        }
+                    if (s.found == rendered) return@collect
+                    rendered = s.found
+
+                    b.list.removeAllViews()
+                    s.found.forEach { m ->
+                        val row = LayoutInflater.from(requireContext())
+                            .inflate(android.R.layout.simple_list_item_2, b.list, false)
+                        row.findViewById<TextView>(android.R.id.text1).text = m.name
+                        row.findViewById<TextView>(android.R.id.text2).text =
+                            "${m.id} · ${m.rssi} dBm"
+                        row.setOnClickListener { vm.connect(m) }
+                        b.list.addView(row)
                     }
                 }
             }

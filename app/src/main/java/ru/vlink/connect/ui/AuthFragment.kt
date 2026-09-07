@@ -41,15 +41,21 @@ class AuthFragment : Fragment(R.layout.fragment_auth) {
                 vm.ui.collect { s ->
                     val setup = s.status?.empty ?: true
                     val usable = s.status?.let { it.open && !it.locked } ?: false
+                    // Прошивки до кадра 0x88 логин не сообщают. Тогда спрашиваем.
+                    val askLogin = setup || s.login.isEmpty()
 
                     b.title.setText(
                         if (setup) R.string.auth_title_setup else R.string.auth_title_login
                     )
-                    b.hint.text =
-                        if (setup) getString(R.string.auth_hint_setup)
-                        else "Вход как «${s.login}». " + getString(R.string.auth_latin_only)
+                    b.hint.text = when {
+                        setup -> getString(R.string.auth_hint_setup)
+                        s.login.isEmpty() ->
+                            "Модуль не сообщил логин — похоже, на нём прошивка до " +
+                            "появления такой возможности. Введите логин вручную."
+                        else -> "Вход как «${s.login}». " + getString(R.string.auth_latin_only)
+                    }
 
-                    b.loginBox.isVisible = setup
+                    b.loginBox.isVisible = askLogin
                     b.repeatBox.isVisible = setup
                     b.go.setText(if (setup) R.string.auth_do_setup else R.string.auth_do_login)
                     b.go.isEnabled = usable && s.busy == null
@@ -68,7 +74,7 @@ class AuthFragment : Fragment(R.layout.fragment_auth) {
                                 b.repeat.text?.toString().orEmpty()
                             )
                         } else {
-                            vm.login(pass)
+                            vm.login(pass, b.login.text?.toString().orEmpty())
                         }
                     }
                 }

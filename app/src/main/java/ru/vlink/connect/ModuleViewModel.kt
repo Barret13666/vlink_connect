@@ -112,15 +112,25 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun login(password: String) {
+    /**
+     * Обычно логин приходит от модуля кадром 0x88 — это нужно, чтобы телефон
+     * друга, которого владелец добавляет впервые, мог посчитать ключ. Но
+     * прошивки до появления этого кадра логин не сообщают, и тогда
+     * приходится спрашивать у человека: [typedLogin].
+     */
+    fun login(password: String, typedLogin: String = "") {
         val s = salt ?: return fail("Модуль не прислал соль")
-        val l = _ui.value.login
-        if (l.isEmpty()) return fail("Модуль не прислал логин")
+        val l = _ui.value.login.ifEmpty { typedLogin.trim() }
+        if (l.isEmpty()) {
+            return fail("Введите логин: этот модуль его не сообщает")
+        }
+        (VescCredentials.checkLogin(l) as? VescCredentials.Verdict.Error)
+            ?.let { return fail(it.text) }
         (VescCredentials.checkPassword(password) as? VescCredentials.Verdict.Error)
             ?.let { return fail(it.text) }
 
         viewModelScope.launch {
-            _ui.update { it.copy(busy = "Считаю ключ...") }
+            _ui.update { it.copy(busy = "Считаю ключ...", login = l) }
             sessionKeyMaterial = withContext(Dispatchers.Default) {
                 VescCrypto.kdf(s, l, password)
             }

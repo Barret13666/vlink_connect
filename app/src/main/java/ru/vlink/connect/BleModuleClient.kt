@@ -52,6 +52,11 @@ class BleModuleClient(private val app: Application) : ModuleClient {
          *  Android в этот момент поднимает шифрование, и опрос таблицы
          *  вперемешку с этим даёт то пустой список сервисов, то ошибку 133. */
         const val DISCOVER_DELAY_MS = 600L
+
+        /** Сколько искать, прежде чем остановиться самому. Бесконечный
+         *  поиск сажает батарею, а Android и вовсе глушит приложение,
+         *  запустившее сканирование больше пяти раз за полминуты. */
+        const val SCAN_MS = 15_000L
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -82,6 +87,8 @@ class BleModuleClient(private val app: Application) : ModuleClient {
     /** Отключились по своей воле. Нужно, чтобы не пугать человека
      *  сообщением «модуль закрыл связь», когда связь закрыл он сам. */
     private var closing = false
+
+    private val stopScanTask = Runnable { stopScan() }
 
     private fun say(text: String) { scope.launch { _notice.emit(text) } }
     private fun push(e: VescProtocol.Event) { scope.launch { _events.emit(e) } }
@@ -121,9 +128,13 @@ class BleModuleClient(private val app: Application) : ModuleClient {
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
         a.bluetoothLeScanner?.startScan(listOf(filter), settings, scanCallback)
+
+        main.removeCallbacks(stopScanTask)
+        main.postDelayed(stopScanTask, SCAN_MS)
     }
 
     override fun stopScan() {
+        main.removeCallbacks(stopScanTask)
         adapter?.bluetoothLeScanner?.stopScan(scanCallback)
         if (_link.value == Link.SCANNING) _link.value = Link.IDLE
     }
