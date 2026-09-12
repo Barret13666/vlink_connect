@@ -1,16 +1,14 @@
-# Выпуск: подписанный APK и прошивки обеих плат.
+# Выпуск приложения VLink Connect: подписанный APK и релиз на GitHub.
 #
-# Запускается на тег вида v1.0 либо руками (тогда тег спрашивается в
-# поле ввода). Повседневные проверки живут в build.yml и здесь намеренно
-# не повторяются.
+# Запускается на тег вида v1.0 либо руками (тогда тег спрашивается в поле
+# ввода). Повседневные проверки живут в build.yml и здесь не повторяются.
 #
 # ВАЖНО: сборку релиза из build.yml надо убрать, иначе два прогона на один
 # тег будут наперегонки создавать один и тот же релиз и перетирать чужие
 # файлы. В прилагаемом build.yml это уже сделано.
 #
-# Прошивки собираются по возможности. Если в репозитории лежит только
-# приложение, соответствующие задания просто пропускаются, а не валят
-# выпуск: раскладка репозитория у всех своя.
+# Прошивки модуля и моста здесь не собираются и в релиз не кладутся — они
+# живут в репозитории исходниками, и прошивают их из Arduino IDE.
 
 name: release
 
@@ -29,29 +27,16 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Ядро и библиотека прибиты гвоздями сознательно. Скетч моста написан под
-  # классический API NimBLE (линейка 1.4.x): на 2.x он не соберётся вовсе,
-  # там другие имена классов и другие сигнатуры колбэков. А NimBLE 1.4.x
-  # проверен с ядром esp32 2.x — на 3.x он местами конфликтует с IDF 5.
-  # Обновлять эти номера можно, но только вместе с проверкой на живой плате.
-  ESP32_CORE: "esp32:esp32@2.0.17"
-  ESP32_FQBN: "esp32:esp32:d1_mini32"
-  NIMBLE_LIB: "NimBLE-Arduino@1.4.3"
-  ESP32_INDEX: "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
-  NRF5_INDEX: "https://sandeepmistry.github.io/arduino-nRF5/package_nRF5_boards_index.json"
-
 jobs:
 
-  # ------------------------------------------------------------------ разведка
-  survey:
-    name: Что в репозитории
+  release:
+    name: Подписанный APK и релиз
+    # Одним заданием намеренно: собирать в одном, а публиковать в другом
+    # означало бы гонять APK через артефакты и тянуть версию через outputs.
+    # Делить тут нечего — ничто не идёт параллельно.
     runs-on: ubuntu-latest
-    outputs:
-      gradle_dir: ${{ steps.look.outputs.gradle_dir }}
-      bridge_dir: ${{ steps.look.outputs.bridge_dir }}
-      module_dir: ${{ steps.look.outputs.module_dir }}
-      version: ${{ steps.ver.outputs.version }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -66,53 +51,24 @@ jobs:
             *) echo "Тег должен начинаться с v, получено: '$TAG'"; exit 1 ;;
           esac
           echo "Тег: $TAG"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}"   >> "$GITHUB_OUTPUT"
 
-      - name: Где что лежит
-        # Ищем сами, а не полагаемся на раскладку: у проекта была подпапка
-        # android/, а прошивки могут лежать и в корне, и в firmware/.
-        # arduino-cli требует, чтобы папка скетча звалась так же, как .ino,
-        # поэтому ищем именно по этому признаку.
-        id: look
+      - name: Где лежит проект
+        # Ищем корень Gradle сами: у проекта была подпапка android/, и
+        # перепутать раскладку легко. Явная ошибка здесь понятнее, чем
+        # «Directory does not contain a Gradle build» из недр Gradle.
+        id: root
         run: |
-          if   [ -f settings.gradle.kts ];         then G=.
-          elif [ -f android/settings.gradle.kts ]; then G=android
+          if   [ -f settings.gradle.kts ];         then D=.
+          elif [ -f android/settings.gradle.kts ]; then D=android
           else
             echo "settings.gradle.kts не найден ни в корне, ни в android/."
             echo "Содержимое корня:"; ls -la
             exit 1
           fi
-          echo "gradle_dir=$G" >> "$GITHUB_OUTPUT"
-          echo "Корень Gradle: $G"
-
-          # Возврат всегда нулевой: шаги идут под set -e, и функция,
-          # закончившаяся неудачным условием, уронила бы весь шаг.
-          find_sketch() {
-            pat="$1"
-            for d in $(find . -type d -not -path '*/.*' | sort); do
-              n=$(basename "$d")
-              if [ -f "$d/$n.ino" ] && printf '%s' "$n" | grep -qE "$pat"; then
-                printf '%s' "${d#./}"
-                return 0
-              fi
-            done
-            return 0
-          }
-
-          B=$(find_sketch 'wemos|bridge')
-          M=$(find_sketch 'protect|vlink.*ble|ble_uart')
-          echo "bridge_dir=$B" >> "$GITHUB_OUTPUT"
-          echo "module_dir=$M" >> "$GITHUB_OUTPUT"
-          echo "Скетч моста:   ${B:-не найден, задание будет пропущено}"
-          echo "Скетч модуля:  ${M:-не найден, задание будет пропущено}"
-
-  # ----------------------------------------------------------------- APK
-  android:
-    name: Подписанный APK
-    needs: survey
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+          echo "Корень проекта: $D"
+          echo "dir=$D" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -140,27 +96,28 @@ jobs:
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
 
-      - name: Сборка
+      - name: Тесты и сборка
         # VERSION_NAME и VERSION_CODE подхватывает build.gradle.kts. Без них
         # каждый выпуск сообщал бы о себе одну и ту же версию из исходников,
-        # и телефон отказывался бы обновляться поверх прежнего.
+        # и телефон отказывался бы ставить новый APK поверх прежнего:
+        # versionCode обязан расти.
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          VERSION_NAME: ${{ needs.survey.outputs.version }}
+          VERSION_NAME: ${{ steps.ver.outputs.version }}
           VERSION_CODE: ${{ github.run_number }}
-        working-directory: ${{ needs.survey.outputs.gradle_dir }}
+        working-directory: ${{ steps.root.outputs.dir }}
         run: |
           if [ -x ./gradlew ]; then RUN=./gradlew; else RUN=gradle; fi
           $RUN --no-daemon test assembleRelease
 
-      - name: Проверить, что APK действительно подписан
-        # Тихо собранный неподписанный APK — худший из исходов: он выглядит
+      - name: Проверить подпись и переименовать
+        # Тихо собранный неподписанный APK — худший из исходов: выглядит
         # готовым, ставится на чистый телефон и не ставится поверх прежнего.
-        # Лучше узнать об этом здесь.
-        working-directory: ${{ needs.survey.outputs.gradle_dir }}
+        # Лучше узнать об этом здесь, чем от людей после выпуска.
+        working-directory: ${{ steps.root.outputs.dir }}
         run: |
           APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
           if [ -z "$APK" ]; then echo "APK не собрался"; exit 1; fi
@@ -173,199 +130,42 @@ jobs:
           BT=$(ls "$ANDROID_HOME"/build-tools | sort -V | tail -1)
           "$ANDROID_HOME/build-tools/$BT/apksigner" verify --verbose "$APK"
 
-      - name: Переименовать под версию
-        working-directory: ${{ needs.survey.outputs.gradle_dir }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/out"
-          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
-          cp "$APK" "$RUNNER_TEMP/out/vlink-connect-${{ needs.survey.outputs.version }}.apk"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: apk
-          path: ${{ runner.temp }}/out/*.apk
-          if-no-files-found: error
-
-  # -------------------------------------------------------- прошивка моста
-  bridge:
-    name: Прошивка моста (ESP32)
-    needs: survey
-    if: needs.survey.outputs.bridge_dir != ''
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: arduino/setup-arduino-cli@v2
-
-      - name: Ядро и библиотеки
-        run: |
-          arduino-cli config init --overwrite
-          arduino-cli config add board_manager.additional_urls "$ESP32_INDEX"
-          arduino-cli core update-index
-          arduino-cli core install "$ESP32_CORE"
-          arduino-cli lib install "$NIMBLE_LIB"
-
-      - name: Сборка
-        run: |
-          arduino-cli compile \
-            --fqbn "$ESP32_FQBN" \
-            --warnings all \
-            --export-binaries \
-            "${{ needs.survey.outputs.bridge_dir }}"
-
-      - name: Собрать результат
-        run: |
-          mkdir -p "$RUNNER_TEMP/out"
-          V="${{ needs.survey.outputs.version }}"
-          find "${{ needs.survey.outputs.bridge_dir }}/build" -name '*.ino.bin' \
-            -exec cp {} "$RUNNER_TEMP/out/vlink-bridge-esp32-$V.bin" \;
-          ls -la "$RUNNER_TEMP/out"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bridge-firmware
-          path: ${{ runner.temp }}/out/*.bin
-          if-no-files-found: error
-
-  # ------------------------------------------------------- прошивка модуля
-  module:
-    name: Прошивка модуля (nRF51)
-    needs: survey
-    if: needs.survey.outputs.module_dir != ''
-    runs-on: ubuntu-latest
-    # По возможности, а не обязательно. Ядро nRF5 не первой свежести, и
-    # точное имя платы с набором пунктов меню в нём может отличаться от
-    # ожидаемого. Валить из-за этого выпуск приложения незачем: исходники
-    # прошивки всё равно попадут в релиз, а нужный FQBN виден в логе шага
-    # "Какие платы есть" — впишите его в переменную репозитория NRF5_FQBN.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: arduino/setup-arduino-cli@v2
-
-      - name: Ядро nRF5
-        run: |
-          arduino-cli config init --overwrite
-          arduino-cli config add board_manager.additional_urls "$NRF5_INDEX"
-          arduino-cli core update-index
-          arduino-cli core install sandeepmistry:nRF5
-
-      - name: Какие платы есть
-        # Печатаем список до сборки. Если FQBN на следующем шаге не
-        # подойдёт, правильное имя платы и набор пунктов меню будут видны
-        # прямо здесь, в этом же прогоне, — останется вписать их в
-        # переменную репозитория NRF5_FQBN.
-        run: |
-          arduino-cli board listall | grep -i nrf5 || true
-          echo "--- пункты меню ---"
-          arduino-cli board details -b sandeepmistry:nRF5:Generic_nRF51 || true
-
-      - name: Сборка
-        env:
-          FQBN: ${{ vars.NRF5_FQBN || 'sandeepmistry:nRF5:Generic_nRF51:chip=xxaa,softdevice=s130,lfclk=lfxo' }}
-        run: |
-          arduino-cli compile --fqbn "$FQBN" --export-binaries \
-            "${{ needs.survey.outputs.module_dir }}"
-
-      - name: Собрать результат
-        run: |
-          mkdir -p "$RUNNER_TEMP/out"
-          V="${{ needs.survey.outputs.version }}"
-          find "${{ needs.survey.outputs.module_dir }}/build" -name '*.ino.hex' \
-            -exec cp {} "$RUNNER_TEMP/out/vlink-module-nrf51-$V.hex" \;
-          ls -la "$RUNNER_TEMP/out"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: module-firmware
-          path: ${{ runner.temp }}/out/*.hex
-          if-no-files-found: error
-
-  # -------------------------------------------------------------- публикация
-  publish:
-    name: Собрать релиз
-    needs: [survey, android, bridge, module]
-    # always() нужен, чтобы пропущенные и незаладившиеся задания прошивок не
-    # утянули за собой выпуск. А вот без APK публиковать нечего.
-    if: always() && needs.android.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: downloaded
-
-      - name: Сложить файлы выпуска
-        run: |
-          V="${{ needs.survey.outputs.version }}"
-          mkdir -p release
-          find downloaded -type f \( -name '*.apk' -o -name '*.bin' -o -name '*.hex' \) \
-            -exec cp {} release/ \;
-
-          # Исходники прошивок кладём всегда: их перед прошивкой всё равно
-          # правят под свою плату, а для nRF51 готового hex может и не быть.
-          B="${{ needs.survey.outputs.bridge_dir }}"
-          M="${{ needs.survey.outputs.module_dir }}"
-          if [ -n "$B" ]; then zip -qr "release/vlink-bridge-firmware-src-$V.zip" "$B"; fi
-          if [ -n "$M" ]; then zip -qr "release/vlink-module-firmware-src-$V.zip" "$M"; fi
-
-          echo "В релиз пойдёт:"; ls -la release
+          mkdir -p "$GITHUB_WORKSPACE/release"
+          cp "$APK" "$GITHUB_WORKSPACE/release/vlink-connect-${{ steps.ver.outputs.version }}.apk"
+          ls -la "$GITHUB_WORKSPACE/release"
 
       - name: Текст релиза
         run: |
-          V="${{ needs.survey.outputs.version }}"
           {
-            echo "## Что здесь"
+            echo "## Установка"
             echo
-            echo "| Файл | Куда |"
-            echo "|---|---|"
-            if [ -f "release/vlink-connect-$V.apk" ]; then
-              echo "| \`vlink-connect-$V.apk\` | приложение на телефон |"
-            fi
-            if [ -f "release/vlink-bridge-esp32-$V.bin" ]; then
-              echo "| \`vlink-bridge-esp32-$V.bin\` | мост UART-дисплея, ESP32 |"
-            fi
-            if [ -f "release/vlink-module-nrf51-$V.hex" ]; then
-              echo "| \`vlink-module-nrf51-$V.hex\` | защищённый модуль, nRF51 |"
-            fi
-            if ls release/*-src-*.zip >/dev/null 2>&1; then
-              echo "| \`*-src-*.zip\` | исходники прошивок |"
-            fi
+            echo "Скачайте \`vlink-connect-${{ steps.ver.outputs.version }}.apk\`"
+            echo "и разрешите установку из этого источника."
             echo
-            echo "### Порядок установки"
-            echo
-            echo "1. Прошить модуль, подать питание — он откроет служебное"
-            echo "   окно на минуту."
-            echo "2. Установить APK, войти в модуль по паролю в эту минуту."
-            echo "3. Если есть мост UART-дисплея: прошить его и привязать"
-            echo "   мастером на экране «Мост UART-дисплея»."
+            echo "Прошивки модуля и моста в релиз не входят: они лежат в"
+            echo "репозитории исходниками и прошиваются из Arduino IDE."
             echo
             echo "### Две вещи, о которые спотыкаются чаще всего"
             echo
-            echo "**Память моста переживает перепрошивку.** Мост, однажды"
-            echo "привязанный к модулю, ищет только его и к другому не"
-            echo "пойдёт, сколько его ни перешивай. Со стороны это выглядит"
-            echo "как «мост ничего не делает». Лечится кнопкой «Забыть"
-            echo "привязку» в приложении или командой \`forget\` в мониторе"
-            echo "порта на 115200."
+            echo "**Модуль ждёт минуту.** Служебный доступ открыт только"
+            echo "первую минуту после подачи питания. Не успели — снимите и"
+            echo "подайте питание снова."
             echo
-            echo "**Привязанный мост занимает модуль** с первой секунды"
-            echo "после включения, а занятый модуль в эфире не объявляется:"
-            echo "его не увидит ни приложение, ни VESC Tool. Это не поломка,"
-            echo "а признак работы. Чтобы вернуть модуль телефону, снимите"
-            echo "питание с моста."
+            echo "**Привязанный мост UART-дисплея занимает модуль** с первой"
+            echo "секунды после включения, а занятый модуль в эфире не"
+            echo "объявляется: его не увидит ни приложение, ни VESC Tool."
+            echo "Это не поломка, а признак работы. Чтобы вернуть модуль"
+            echo "телефону, снимите питание с моста."
           } > NOTES.md
           cat NOTES.md
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          name: VLink Connect ${{ needs.survey.outputs.version }}
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: VLink Connect ${{ steps.ver.outputs.version }}
           body_path: NOTES.md
-          # Дописываем список изменений из истории коммитов под нашим
+          # Список изменений из истории коммитов GitHub допишет под нашим
           # текстом — руками его вести незачем.
           generate_release_notes: true
-          files: release/*
+          files: release/*.apk
           fail_on_unmatched_files: true
