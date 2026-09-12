@@ -1,9 +1,18 @@
+# Повседневные проверки VLink Connect.
+#
+# Отладочный APK собирается на каждый толчок в репозиторий и лежит в
+# артефактах прогона. Заодно проверяется, что собирается прошивка моста:
+# ошибку в ней иначе видно только на столе, с платой в руках.
+#
+# Выпуски здесь НЕ собираются — этим занимается release.yml. Держать сборку
+# релиза в двух файлах нельзя: два прогона на один тег наперегонки создавали
+# бы один и тот же релиз и перетирали чужие файлы.
+
 name: build
 
 on:
   push:
     branches: ["**"]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -61,3 +70,43 @@ jobs:
           name: vlink-connect-debug
           path: ${{ steps.root.outputs.dir }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+  bridge:
+    name: Собирается ли прошивка моста
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Есть ли тут скетч моста
+        # В репозитории может лежать только приложение. Тогда проверять
+        # нечего, и валить прогон из-за этого незачем.
+        id: look
+        run: |
+          D=""
+          for c in wemos-ble-uart firmware/wemos-ble-uart; do
+            if [ -f "$c/wemos-ble-uart.ino" ]; then D="$c"; break; fi
+          done
+          echo "dir=$D" >> "$GITHUB_OUTPUT"
+          echo "Скетч моста: ${D:-не найден, пропускаю}"
+
+      - uses: arduino/setup-arduino-cli@v2
+        if: steps.look.outputs.dir != ''
+
+      - name: Ядро и библиотеки
+        # Номера прибиты гвоздями: скетч написан под классический API NimBLE
+        # (1.4.x), на 2.x он не соберётся вовсе. Те же версии стоят в
+        # release.yml — менять надо в обоих местах и с проверкой на плате.
+        if: steps.look.outputs.dir != ''
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls \
+            "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
+          arduino-cli core update-index
+          arduino-cli core install "esp32:esp32@2.0.17"
+          arduino-cli lib install "NimBLE-Arduino@1.4.3"
+
+      - name: Сборка
+        if: steps.look.outputs.dir != ''
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:d1_mini32 \
+            --warnings all "${{ steps.look.outputs.dir }}"
