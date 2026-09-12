@@ -48,23 +48,51 @@ class ScanFragment : Fragment(R.layout.fragment_scan) {
                 vm.ui.collect { s ->
                     val scanning = s.link == Link.SCANNING
                     b.scanButton.setText(if (scanning) R.string.scan_stop else R.string.scan_start)
-                    b.empty.isVisible = s.found.isEmpty()
+                    b.empty.isVisible = s.modules.isEmpty()
+
+                    val bridges = s.bridges
+                    b.bridgesTitle.isVisible = bridges.isNotEmpty()
+                    b.bridgesHint.isVisible = bridges.isNotEmpty()
 
                     if (s.found == rendered) return@collect
                     rendered = s.found
 
                     b.list.removeAllViews()
-                    s.found.forEach { m ->
-                        val row = LayoutInflater.from(requireContext())
-                            .inflate(android.R.layout.simple_list_item_2, b.list, false)
-                        row.findViewById<TextView>(android.R.id.text1).text = m.name
-                        row.findViewById<TextView>(android.R.id.text2).text =
-                            "${m.id} · ${m.rssi} dBm"
-                        row.setOnClickListener { vm.connect(m) }
-                        b.list.addView(row)
+                    s.modules.forEach { m ->
+                        b.list.addView(
+                            row(b.list, m.name, "${m.id} · ${m.rssi} dBm") { vm.connect(m) }
+                        )
+                    }
+
+                    // Мосты показываем, но нажимать их незачем: привязка
+                    // идёт с экрана модуля, а освободить модуль по воздуху
+                    // нельзя — только снятием питания с моста.
+                    b.bridgeList.removeAllViews()
+                    bridges.forEach { m ->
+                        b.bridgeList.addView(
+                            row(b.bridgeList, m.name, "${m.id} · ${m.rssi} dBm", null)
+                        )
                     }
                 }
             }
         }
     }
+
+    /* Родителя передаём обязательно, пусть и с attachToRoot = false: без него
+       inflate выбрасывает layout_width из разметки, и строка съёживается до
+       ширины текста. */
+    private fun row(
+        parent: android.view.ViewGroup,
+        title: String,
+        subtitle: String,
+        onClick: (() -> Unit)?
+    ): View {
+        val v = LayoutInflater.from(requireContext())
+            .inflate(android.R.layout.simple_list_item_2, parent, false)
+        v.findViewById<TextView>(android.R.id.text1).text = title
+        v.findViewById<TextView>(android.R.id.text2).text = subtitle
+        if (onClick != null) v.setOnClickListener { onClick() }
+        return v
+    }
+
 }

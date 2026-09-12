@@ -60,6 +60,7 @@ object VescProtocol {
     const val CMD_SETUP: Byte     = 0x07
     const val CMD_NEWKEY: Byte    = 0x08
     const val CMD_BIND: Byte      = 0x09
+    const val CMD_ALLOW: Byte     = 0x0A
 
     // ----------------------------------------------------------- ответы
 
@@ -71,6 +72,7 @@ object VescProtocol {
     const val EVT_SALT      = 0x86
     const val EVT_BOUND     = 0x87
     const val EVT_LOGIN     = 0x88
+    const val EVT_ALLOW     = 0x89
 
     // ------------------------------------------------- коды результата
 
@@ -105,6 +107,11 @@ object VescProtocol {
     const val FLAG_AUTHED = 0x04
     const val FLAG_LOCKED    = 0x08
     const val FLAG_ENCRYPTED = 0x10
+    const val FLAG_ALLOW     = 0x20
+
+    /** Флаги внутри кадра EVT_ALLOW. */
+    const val ALLOW_OPEN = 0x01
+    const val ALLOW_ANY  = 0x02
 
     // ---------------------------------------------------- сборка команд
 
@@ -126,6 +133,40 @@ object VescProtocol {
      * rename() — иначе в списке он останется «phone».
      */
     fun bind() = byteArrayOf(CMD_BIND)
+
+    /**
+     * Открыть одноразовое окно привязки для моста UART-дисплея.
+     *
+     * Два кадра: в двадцать байт адрес и имя вместе не помещаются. Первый
+     * открывает окно и заодно сбрасывает имя на «bridge», второй имя
+     * дописывает — значит, порядок важен, и второй без первого бессмыслен.
+     *
+     * Окно живёт две минуты и переживает разрыв связи НАМЕРЕННО: телефон
+     * обязан отключиться, иначе мосту некуда подключаться — соединение у
+     * модуля одно. Разрешение сгорает после первого же удачного сопряжения.
+     *
+     * [mac] — адрес самого моста, как его показывает Android. Пустая строка
+     * означает «жду любого»: так тоже можно, если адрес узнать нечем, но
+     * тогда две минуты сопрячься сможет кто угодно, кто окажется рядом и
+     * успеет раньше моста.
+     */
+    fun allowAddress(mac: String): ByteArray {
+        val a = if (mac.isEmpty()) ByteArray(6)
+                else BridgeProtocol.parseMac(mac)
+                     ?: throw IllegalArgumentException("не адрес: $mac")
+        return byteArrayOf(CMD_ALLOW, 0) + a
+    }
+
+    /** Имя, под которым мост ляжет в список. Режем по байтам: поле в памяти
+     *  модуля 18 байт, а кириллица в UTF-8 занимает по два. */
+    fun allowName(name: String): ByteArray {
+        val n = name.toByteArray(Charsets.UTF_8).take(NAME_BYTES).toByteArray()
+        require(n.isNotEmpty()) { "имя не может быть пустым" }
+        return byteArrayOf(CMD_ALLOW, 1) + n
+    }
+
+    /** Закрыть окно досрочно. */
+    fun allowCancel() = byteArrayOf(CMD_ALLOW, 2)
 
     fun auth(k: ByteArray, challenge: ByteArray): ByteArray =
         byteArrayOf(CMD_AUTH) + VescCrypto.response(k, challenge)
@@ -176,6 +217,8 @@ object VescProtocol {
         val authed: Boolean,
         val locked: Boolean,
         val encrypted: Boolean,
+        /** В модуле открыто окно привязки моста. */
+        val allowOpen: Boolean,
         val attemptsLeft: Int,
         val peerCount: Int,
         val secondsLeft: Int,
@@ -192,6 +235,12 @@ object VescProtocol {
         data class Peer(val index: Int, val name: String) : Event()
         data class Bound(val index: Int) : Event()
         data class Login(val login: String) : Event()
+        data class Allow(
+            val open: Boolean,
+            val anyAddress: Boolean,
+            val secondsLeft: Int,
+            val mac: String
+        ) : Event()
         data class ListEnd(val count: Int) : Event()
         data class Unknown(val raw: ByteArray) : Event()
     }
@@ -210,6 +259,7 @@ object VescProtocol {
                         authed       = f and FLAG_AUTHED != 0,
                         locked       = f and FLAG_LOCKED != 0,
                         encrypted    = f and FLAG_ENCRYPTED != 0,
+                        allowOpen    = f and FLAG_ALLOW != 0,
                         attemptsLeft = frame[2].toInt() and 0xFF,
                         peerCount    = frame[3].toInt() and 0xFF,
                         secondsLeft  = (frame[4].toInt() and 0xFF) or
@@ -241,6 +291,20 @@ object VescProtocol {
 
             EVT_LOGIN ->
                 Event.Login(String(frame, 1, frame.size - 1, Charsets.UTF_8))
+
+            EVT_ALLOW -> {
+                if (frame.size < 10) return Event.Unknown(frame)
+                val f = frame[1].toInt() and 0xFF
+                val a = frame.copyOfRange(4, 10)
+                Event.Allow(
+                    open        = f and ALLOW_OPEN != 0,
+                    anyAddress  = f and ALLOW_ANY != 0,
+                    secondsLeft = (frame[2].toInt() and 0xFF) or
+                                  ((frame[3].toInt() and 0xFF) shl 8),
+                    mac         = if (a.all { it.toInt() == 0 }) ""
+                                  else BridgeProtocol.macToString(a)
+                )
+            }
 
             EVT_BOUND ->
                 if (frame.size < 2) Event.Unknown(frame)

@@ -18,6 +18,7 @@ import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 import ru.vlink.connect.databinding.ActivityMainBinding
 import ru.vlink.connect.ui.AuthFragment
+import ru.vlink.connect.ui.BridgesFragment
 import ru.vlink.connect.ui.HomeFragment
 import ru.vlink.connect.ui.PasswordFragment
 import ru.vlink.connect.ui.PhonesFragment
@@ -87,6 +88,7 @@ class MainActivity : AppCompatActivity() {
                 Screen.HOME     -> HomeFragment()
                 Screen.PHONES   -> PhonesFragment()
                 Screen.PASSWORD -> PasswordFragment()
+                Screen.BRIDGES  -> BridgesFragment()
             }
             supportFragmentManager.beginTransaction()
                 .replace(R.id.container, f)
@@ -117,6 +119,12 @@ class MainActivity : AppCompatActivity() {
         val s = vm.ui.value
         when (s.screen) {
             Screen.PHONES, Screen.PASSWORD -> vm.goTo(Screen.HOME)
+            // С экрана мостов уходим туда, куда есть куда: мастер мог уже
+            // отпустить модуль, и HOME оказался бы мёртвым экраном.
+            Screen.BRIDGES -> {
+                vm.bridgeDisconnect()
+                vm.goTo(if (s.link == Link.READY) Screen.HOME else Screen.SCAN)
+            }
             Screen.HOME, Screen.AUTH -> vm.disconnect()
             else -> @Suppress("DEPRECATION") super.onBackPressed()
         }

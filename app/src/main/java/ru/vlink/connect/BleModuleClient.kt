@@ -95,13 +95,34 @@ class BleModuleClient(private val app: Application) : ModuleClient {
 
     // ------------------------------------------------------------- поиск
 
+    /**
+     * Модуль это или мост. Смотрим сначала на объявленные сервисы, и только
+     * если их в пакете не оказалось — на имя.
+     *
+     * Порядок такой не от хорошей жизни. Служебный UUID моста лежит в самой
+     * рекламе, и его видно всегда. А NUS модуля Веддер кладёт в scan
+     * response: на две 128-битные записи в рекламном пакете места нет.
+     * Scan response доезжает при активном сканировании, но не на всяком
+     * телефоне и не с первого пакета, поэтому имя остаётся запасным
+     * признаком.
+     */
+    private fun kindOf(result: ScanResult, name: String): DeviceKind {
+        val uuids = result.scanRecord?.serviceUuids
+        if (uuids != null) {
+            if (uuids.any { it.uuid == BridgeProtocol.SERVICE }) return DeviceKind.BRIDGE
+            if (uuids.any { it.uuid == VescProtocol.NUS }) return DeviceKind.MODULE
+        }
+        return if (name.contains("Bridge", ignoreCase = true)) DeviceKind.BRIDGE
+               else DeviceKind.MODULE
+    }
+
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val dev = result.device ?: return
             val name = result.scanRecord?.deviceName ?: dev.name ?: "Без имени"
             val list = _found.value.toMutableList()
             val at = list.indexOfFirst { it.id == dev.address }
-            val item = FoundModule(dev.address, name, result.rssi)
+            val item = FoundModule(dev.address, name, result.rssi, kindOf(result, name))
             if (at >= 0) list[at] = item else list += item
             _found.value = list
         }
@@ -152,15 +173,24 @@ class BleModuleClient(private val app: Application) : ModuleClient {
         _found.value = emptyList()
         _link.value = Link.SCANNING
 
-        // Отбираем по UUID моста: служебного сервиса в пакете рекламы нет,
-        // места на две 128-битные записи в нём не хватает.
-        val filter = ScanFilter.Builder()
-            .setServiceUuid(ParcelUuid(VescProtocol.NUS))
-            .build()
+        // Два фильтра, Android соединяет их по «или». Первый ловит модуль по
+        // UUID моста в веск: служебного сервиса в пакете рекламы нет, места
+        // на две 128-битные записи в нём не хватает. Второй ловит мост
+        // UART-дисплея по его сервису настройки — этот лежит прямо в
+        // рекламе, потому что имя у моста длинное и в один пакет с UUID
+        // не влезает, так что разъехались по разным.
+        val filters = listOf(
+            ScanFilter.Builder()
+                .setServiceUuid(ParcelUuid(VescProtocol.NUS))
+                .build(),
+            ScanFilter.Builder()
+                .setServiceUuid(ParcelUuid(BridgeProtocol.SERVICE))
+                .build()
+        )
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
-        a.bluetoothLeScanner?.startScan(listOf(filter), settings, scanCallback)
+        a.bluetoothLeScanner?.startScan(filters, settings, scanCallback)
 
         main.removeCallbacks(stopScanTask)
         main.postDelayed(stopScanTask, SCAN_MS)

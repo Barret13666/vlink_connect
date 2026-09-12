@@ -8,6 +8,8 @@
     <string name="scan_start">Искать</string>
     <string name="scan_stop">Остановить</string>
     <string name="scan_empty">Модулей пока не найдено</string>
+    <string name="scan_bridges">Мосты UART-дисплея</string>
+    <string name="scan_bridge_note">Мост занимает модуль с первой секунды после включения, и занятый модуль в эфире не объявляется. Если модуля нет в списке — снимите питание с моста и дисплея, и модуль появится.</string>
 
     <string name="auth_title_setup">Первая настройка</string>
     <string name="auth_title_login">Вход</string>
@@ -24,6 +26,7 @@
     <string name="home_phones">Телефоны</string>
     <string name="home_password">Сменить пароль</string>
     <string name="home_disconnect">Отключиться</string>
+    <string name="home_bridges">Мост UART-дисплея</string>
     <string name="home_single_note">Пока приложение подключено, VESC Tool модуль не увидит: соединение у модуля одно, и во время него он не объявляет себя в эфире. Закончив, нажмите «Отключиться».</string>
     <string name="home_bind_warning">Android покажет своё окно сопряжения. Кода в нём не будет — только согласие. Нажмите «Сопрячь», иначе привязка не состоится.</string>
 
@@ -37,6 +40,15 @@
     <string name="password_hint">Новый пароль не уходит в эфир открытым: он закрывается ключом текущего сеанса. После смены придётся войти заново.</string>
     <string name="password_new">Новый пароль</string>
     <string name="password_apply">Сменить</string>
+
+    <string name="bridges_title">Мост UART-дисплея</string>
+    <string name="bridges_hint">Мост — это плата внутри самоката, к которой проводом подключён штатный дисплей веска. Чтобы дисплей работал через защищённый модуль, мосту нужна такая же привязка, как телефону.</string>
+    <string name="bridges_empty">Мостов поблизости не найдено. Мост виден в эфире только две минуты после подачи питания — дальше он уходит из эфира. Если не успели, снимите и подайте питание.</string>
+    <string name="bridges_rescan">Искать ещё раз</string>
+    <string name="bridges_bind">Привязать</string>
+    <string name="bridges_name">Имя моста в списке</string>
+    <string name="bridges_bind_warning">Привязка идёт в несколько шагов, и на предпоследнем приложение само отключится от модуля: иначе мосту некуда подключиться, соединение у модуля одно.\n\nПосле привязки мост займёт модуль и будет держать его, пока есть питание. Ни это приложение, ни VESC Tool модуля больше не увидят: занятый модуль в эфире не объявляется. Чтобы вернуться к нему, надо снять питание с моста.\n\nЗначит, сменить пароль или поправить список телефонов нужно сейчас, а не потом.</string>
+    <string name="bridges_after_bind">Мост привязан и занял модуль. Пока на мосту есть питание, модуля не будет в списке ни здесь, ни в VESC Tool — это и значит, что дисплей работает. Чтобы подключиться к модулю телефоном, снимите питание с моста.</string>
 
     <string name="common_cancel">Отмена</string>
     <string name="common_ok">Готово</string>
