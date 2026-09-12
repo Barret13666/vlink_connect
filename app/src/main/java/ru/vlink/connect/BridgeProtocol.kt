@@ -94,6 +94,33 @@ object BridgeProtocol {
     const val ERR_NOTARGET = 0x03
     const val ERR_FAIL     = 0x04
 
+    // ------------------------------- причины в кадре BOUND
+
+    const val WHY_OK        = 0x00
+    const val WHY_ENCRYPT   = 0x01
+    const val WHY_NOSVC     = 0x02
+    const val WHY_NOCHAR    = 0x03
+    const val WHY_NONOTIFY  = 0x04
+
+    /** Почему мост не заработал. Разделять «сопряжение не прошло» и
+     *  «сопряглись, но сервис не нашли» обязательно: лечится это совершенно
+     *  по-разному, а раньше оба случая выглядели как успех. */
+    fun boundWhyText(why: Int): String = when (why) {
+        WHY_OK        -> "Готово."
+        WHY_ENCRYPT   -> "Модуль не принял сопряжение. Чаще всего окно " +
+                         "привязки уже истекло или модуль был занят. " +
+                         "Начните заново после подачи питания."
+        WHY_NOSVC     -> "Сопряжение прошло, но на модуле не нашёлся сервис " +
+                         "UART (NUS). Похоже, мост подключился не к тому " +
+                         "устройству — проверьте адрес модуля."
+        WHY_NOCHAR    -> "Сопряжение прошло, но сервис UART на модуле " +
+                         "неполный."
+        WHY_NONOTIFY  -> "Сопряжение прошло, но подписаться на данные не " +
+                         "удалось: шифрование поднялось не до конца. " +
+                         "Повторите привязку после подачи питания."
+        else          -> "Мост не заработал (причина $why)."
+    }
+
     fun resultText(code: Int): String = when (code) {
         OK           -> "Готово."
         ERR_CLOSED   -> "Окно настройки моста закрыто. Снимите и подайте " +
@@ -111,6 +138,30 @@ object BridgeProtocol {
     const val ST_CONNECTING = 2
     const val ST_PAIRING    = 3
     const val ST_BRIDGING   = 4
+
+    /** Одной строкой, для показа на экране. */
+    fun summary(st: Status): String = buildString {
+        append(stateText(st.state))
+        append("\n")
+        append(if (st.paired) "Привязка к защищённому модулю есть"
+               else "Привязки нет")
+        if (st.targetMac.isNotEmpty()) append(", модуль ").append(st.targetMac)
+        else append(", модуль не задан")
+        append("\n")
+        append(
+            when {
+                st.encrypted -> "Связь с модулем зашифрована"
+                // Без шифрования - это не обязательно беда: так мост
+                // работает с обычным модулем Веддера, где защищать нечего.
+                st.linked    -> if (st.state == ST_BRIDGING)
+                                    "Связь без шифрования — модуль без защиты"
+                                else
+                                    "Подключён, но шифрование не поднято"
+                else         -> "С модулем не соединён"
+            }
+        )
+        if (!st.provOpen) append("\nОкно настройки закрыто")
+    }
 
     fun stateText(state: Int): String = when (state) {
         ST_IDLE       -> "Не настроен, ждёт привязки"
@@ -159,7 +210,9 @@ object BridgeProtocol {
 
     data class Status(
         val provOpen: Boolean,
-        val bonded: Boolean,
+        /** Мост считает себя привязанным (его собственный признак в NVS,
+         *  а не то, что видно в хранилище бондов). */
+        val paired: Boolean,
         val hasTarget: Boolean,
         val linked: Boolean,
         val encrypted: Boolean,
@@ -173,7 +226,7 @@ object BridgeProtocol {
     sealed class Event {
         data class State(val status: Status) : Event()
         data class Result(val command: Int, val code: Int) : Event()
-        data class Bound(val ok: Boolean) : Event()
+        data class Bound(val ok: Boolean, val why: Int) : Event()
         data class Unknown(val raw: ByteArray) : Event()
     }
 
@@ -188,7 +241,7 @@ object BridgeProtocol {
                 Event.State(
                     Status(
                         provOpen  = f and FLAG_PROV_OPEN != 0,
-                        bonded    = f and FLAG_BONDED != 0,
+                        paired    = f and FLAG_BONDED != 0,
                         hasTarget = f and FLAG_TARGET != 0,
                         linked    = f and FLAG_LINK != 0,
                         encrypted = f and FLAG_ENCRYPTED != 0,
@@ -205,7 +258,12 @@ object BridgeProtocol {
 
             EVT_BOUND ->
                 if (frame.size < 2) Event.Unknown(frame)
-                else Event.Bound(frame[1].toInt() != 0)
+                else Event.Bound(
+                    ok = frame[1].toInt() != 0,
+                    // Третий байт появился позже кадра. Прошивка без него
+                    // считается «причина не указана».
+                    why = if (frame.size >= 3) frame[2].toInt() and 0xFF else -1
+                )
 
             else -> Event.Unknown(frame)
         }

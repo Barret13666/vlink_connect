@@ -54,6 +54,7 @@ class BridgesFragment : Fragment(R.layout.fragment_bridges) {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.ui.collect { s ->
                     renderProgress(b, s)
+                    renderState(b, s)
 
                     val list = s.bridges
                     b.empty.isVisible = list.isEmpty() && s.bridgeStep == BridgeStep.IDLE
@@ -70,17 +71,35 @@ class BridgesFragment : Fragment(R.layout.fragment_bridges) {
                         row.name.text = m.name
                         row.detail.text = "${m.id} · ${m.rssi} dBm"
                         row.bind.setOnClickListener { askBind(m) }
+                        row.check.setOnClickListener { vm.bridgeInspect(m) }
+                        row.forget.setOnClickListener { askForget(m) }
                         // Привязывать можно только пройдя пароль: окно в
                         // модуле открывает тот же сеанс, в котором его
                         // вводили. Кнопку не прячем, а гасим — иначе
                         // непонятно, куда она делась.
                         row.bind.isEnabled = s.status?.authed == true &&
                                              s.bridgeStep == BridgeStep.IDLE
+                        // Опрос ничего не меняет, поэтому доступен всегда:
+                        // он и нужен как раз тогда, когда войти в модуль не
+                        // получается.
+                        row.check.isEnabled = s.bridgeStep == BridgeStep.IDLE
+                        row.forget.isEnabled = s.bridgeStep == BridgeStep.IDLE
                         b.list.addView(row.root)
                     }
                 }
             }
         }
+    }
+
+    private fun renderState(b: FragmentBridgesBinding, s: UiState) {
+        val st = s.bridgeStatus
+        if (st == null) {
+            b.state.isVisible = false
+            return
+        }
+        b.state.isVisible = true
+        b.state.text = getString(R.string.bridges_state_head) + "\n" +
+                       BridgeProtocol.summary(st)
     }
 
     private fun renderProgress(b: FragmentBridgesBinding, s: UiState) {
@@ -97,6 +116,15 @@ class BridgesFragment : Fragment(R.layout.fragment_bridges) {
             else              -> "Иду по шагам, не выключайте самокат\n\n"
         }
         b.progress.text = head + s.bridgeLog.joinToString("\n") { "· $it" }
+    }
+
+    private fun askForget(m: FoundModule) {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.bridges_forget)
+            .setMessage(R.string.bridges_forget_warning)
+            .setPositiveButton(R.string.bridges_forget) { _, _ -> vm.bridgeForget(m) }
+            .setNegativeButton(R.string.common_cancel, null)
+            .show()
     }
 
     private fun askBind(m: FoundModule) {

@@ -90,6 +90,10 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
      *  служебная минута к тому времени кончится, а модуль займёт сам мост. */
     private var bridgeWantedName = "Мост дисплея"
 
+    /** Отложенная задача «забыть привязку»: её надо выполнить после того,
+     *  как мост ответит на опрос состояния. */
+    private var bridgeWantForget = false
+
     private var bridgeTimeout: Job? = null
 
     init {
@@ -231,6 +235,25 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
     // ==================================================== мост UART-дисплея
 
     /**
+     * Подключиться к мосту и показать, что он о себе думает. Ничего не
+     * меняет — только читает. Нужно, когда мост есть в эфире, модуль есть в
+     * эфире, а дисплей не работает: до этого понять, на чём всё встало,
+     * можно было только по кабелю в монитор порта.
+     */
+    fun bridgeInspect(m: FoundModule) {
+        _ui.update {
+            it.copy(
+                bridgeName = m.name, bridgeAddress = m.id,
+                bridgeStep = BridgeStep.IDLE,
+                bridgeStatus = null,
+                bridgeLog = emptyList(),
+                busy = "Спрашиваю мост..."
+            )
+        }
+        bridge.connect(m.id)
+    }
+
+    /**
      * Привязать мост к модулю, к которому мы сейчас подключены.
      *
      * Мастер идёт по шагам и в конце отпускает модуль — иначе мосту некуда
@@ -253,6 +276,7 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         bridgeWantedName = name.ifBlank { "Мост дисплея" }
+        bridgeWantForget = false
         _ui.update {
             it.copy(
                 bridgeName = m.name, bridgeAddress = m.id,
@@ -272,10 +296,30 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Забыть привязку на стороне моста. Запись в модуле при этом остаётся —
-     *  её удаляют в списке телефонов, как любую другую. */
-    fun bridgeUnpair() {
-        bridge.send(BridgeProtocol.unpair())
+    /**
+     * Забыть привязку на стороне моста: адрес модуля, признак привязки и
+     * ключи сопряжения.
+     *
+     * Нужно чаще, чем кажется. Память моста переживает перепрошивку, поэтому
+     * мост, однажды привязанный к защищённому модулю, ищет только его — и к
+     * обычному модулю не пойдёт, сколько его ни перешивай. Со стороны это
+     * выглядит как «мост ничего не делает».
+     *
+     * Запись в памяти модуля при этом остаётся: её удаляют в списке
+     * телефонов, как любую другую.
+     */
+    fun bridgeForget(m: FoundModule) {
+        bridgeWantForget = true
+        _ui.update {
+            it.copy(
+                bridgeName = m.name, bridgeAddress = m.id,
+                bridgeStep = BridgeStep.IDLE,
+                bridgeStatus = null,
+                bridgeLog = emptyList(),
+                busy = "Подключаюсь к мосту..."
+            )
+        }
+        bridge.connect(m.id)
     }
 
     private fun bridgeLog(text: String) {
@@ -320,7 +364,15 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
     private fun onBridgeEvent(e: BridgeProtocol.Event) {
         when (e) {
             is BridgeProtocol.Event.State -> {
-                _ui.update { it.copy(bridgeStatus = e.status) }
+                _ui.update { it.copy(bridgeStatus = e.status, busy = null) }
+
+                if (bridgeWantForget) {
+                    bridgeWantForget = false
+                    bridgeLog("Прошу мост забыть привязку")
+                    bridge.send(BridgeProtocol.unpair())
+                    return
+                }
+
                 if (_ui.value.bridgeStep != BridgeStep.ASKING) return
 
                 if (!e.status.provOpen) {
@@ -359,8 +411,17 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
                         releaseModuleForBridge()
                     }
                     BridgeProtocol.CMD_UNPAIR.toInt() -> {
-                        bridgeLog("Мост забыл привязку. Запись в модуле " +
-                                  "удалите в списке телефонов.")
+                        _ui.update {
+                            it.copy(
+                                busy = null,
+                                message = "Мост забыл привязку. Теперь он " +
+                                          "снова возьмётся за обычный модуль, " +
+                                          "а для защищённого ждёт новой " +
+                                          "привязки."
+                            )
+                        }
+                        bridgeLog("Мост забыл привязку. Запись в памяти " +
+                                  "модуля удалите в списке телефонов.")
                         bridge.send(BridgeProtocol.status())
                     }
                 }
@@ -370,12 +431,14 @@ class ModuleViewModel(app: Application) : AndroidViewModel(app) {
                 bridgeTimeout?.cancel()
                 if (e.ok) {
                     _ui.update { it.copy(bridgeStep = BridgeStep.DONE, busy = null) }
-                    bridgeLog("Готово. Мост привязан, дисплей должен ожить.")
+                    bridgeLog("Мост вышел на модуль и подписался на данные.")
                 } else {
+                    // Раньше здесь была одна фраза на все случаи, и она
+                    // врала: мост присылал успех сразу после сопряжения, ещё
+                    // не проверив, найдётся ли на модуле сервис UART.
                     bridgeFail(
-                        "Модуль не принял сопряжение. Чаще всего это значит, " +
-                        "что окно привязки уже истекло. Начните заново после " +
-                        "подачи питания."
+                        if (e.why >= 0) BridgeProtocol.boundWhyText(e.why)
+                        else "Мост не смог выйти на модуль."
                     )
                 }
                 bridge.send(BridgeProtocol.status())
